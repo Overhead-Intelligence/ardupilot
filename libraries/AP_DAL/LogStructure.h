@@ -565,6 +565,10 @@ struct log_RSLL {
 
 // @LoggerMessage: RSWS
 // @Description: Replay set wind speed event
+// @Field: Spd: externally-supplied wind speed
+// @Field: SpdErr: externally-supplied wind speed accuracy, 1-StD
+// @Field: Dirn: externally-supplied wind direction
+// @Field: DirnErr: externally-supplied wind direction accuracy, 1-StD
 struct log_RSWS {
     float speed; // wind speed (m/s)
     float speed_accuracy; // wind speed 1-sigma uncertainty (m/s)
