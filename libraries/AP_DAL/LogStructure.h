@@ -54,7 +54,8 @@
     LOG_REVH_MSG, \
     LOG_RWOH_MSG, \
     LOG_RBOH_MSG, \
-    LOG_RTER_MSG
+    LOG_RTER_MSG, \
+    LOG_RSWS_MSG
 
 // @LoggerMessage: RFRH
 // @Description: Replay FRame Header
@@ -562,6 +563,16 @@ struct log_RSLL {
     uint8_t _end;
 };
 
+// @LoggerMessage: RSWS
+// @Description: Replay set wind speed event
+struct log_RSWS {
+    float speed; // wind speed (m/s)
+    float speed_accuracy; // wind speed 1-sigma uncertainty (m/s)
+    float direction; // wind direction (deg)
+    float direction_accuracy; // wind direction 1-signma uncertainty (deg)
+    uint8_t _end;
+};
+
 // @LoggerMessage: REVH
 // @Description: Replay external velocity data
 // @Field: VX: external velocity estimate, X-axis
@@ -709,4 +720,6 @@ struct log_RTER {
     { LOG_RBOH_MSG, RLOG_SIZE(RBOH),                                   \
       "RBOH", "ffffffffIfffH", "Q,DPX,DPY,DPZ,DAX,DAY,DAZ,DT,TS,OX,OY,OZ,D", "-------------", "-------------" }, \
     { LOG_RTER_MSG, RLOG_SIZE(RTER),                                   \
-      "RTER", "f", "Alt", "m", "0" },
+      "RTER", "f", "Alt", "m", "0" }, \
+    { LOG_RSWS_MSG, RLOG_SIZE(RSWS),                         \
+      "RSWS", "ffff", "Spd,SpdErr,Dirn,DirnErr", "----", "----" },
