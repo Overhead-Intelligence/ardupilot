@@ -109,6 +109,15 @@ ZMF_YAW_ERR_DEG = bind_add_param('YAW_ERR_DEG', 4, 8.0)
 --]]
 ZMF_YAW_INT_DEG = bind_add_param('YAW_INT_DEG', 5, 45.0)
 
+--[[
+    // @Param: ZMF_ACTION
+    // @DisplayName: Action to perform on failure 
+    // @Description: Action to perform on detected motor faiure. Ignore, Report, LOITER
+    // @User: Standard
+    // @Values: 0:Ignore,1:Report,2:LOITER
+--]]
+ZMF_ACTION = bind_add_param('ACTION', 6, 1)
+
 local yaw_rate_sensitivity_deg = ZMF_YAW_DEG:get() or 3.0
 local yaw_error_sensivitity_deg = ZMF_YAW_ERR_DEG:get() or 8.0
 local yaw_integral_sensitivity_deg = ZMF_YAW_INT_DEG:get() or 45.0
@@ -129,8 +138,13 @@ local function switch_to_forward_flight()
     if altitude <= Q_ASSIST_ALT:get() then
         gcs:send_text(MAV_SEVERITY.INFO, string.format("Motors: failed - altitude %0.1f too low", altitude ))
     else
-        gcs:send_text(MAV_SEVERITY.INFO, string.format("Motors: failed - Fixed Wing save"))
-        vehicle:set_mode(FLIGHT_MODE.LOITER)
+        local zmf_action = (ZMF_ACTION:get() or 1)
+        if zmf_action == 1 then
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("Motors: failed!"))
+        elseif zmf_action == 2 then
+            gcs:send_text(MAV_SEVERITY.INFO, string.format("Motors: failed - Fixed Wing save"))
+            vehicle:set_mode(FLIGHT_MODE.LOITER)
+        end
     end
     -- temporarily disable Q_ASSIST since it is likely not useful with a motor missing (set but not save)
     param:set("Q_ASSIST_SPEED",-1)
@@ -185,7 +199,6 @@ local function VTOL_motor_failure()
         yaw_error_integral = yaw_error_integral * 0.8 -- decay when rotating intentionally
     end
     if math.abs(yaw_error_integral) > math.rad(yaw_integral_sensitivity_deg) then
-        print(string.format("yaw error: %.1f rate %.1f integral %.1f", yaw_error, math.deg(yaw_target_rate_rad), math.deg(yaw_error_integral)))
         print("MOTOR FAILURE suspected: yaw diverging")
         return true
     end
