@@ -310,9 +310,13 @@ class FlasherWizard(tk.Tk):
 
             # -- Stage 1: enter DFU -------------------------------------------
             self._set_status("Stage 1/3: entering DFU mode")
-            if not port:
-                log("No port selected; auto-detecting flight controller ...")
-                port = mavlink_dfu.autodetect_mavlink_port(log=log)
+            # Resolve the *actual* MAVLink port by heartbeat: this picks the
+            # autopilot's Mavlink port over its SLCAN port and skips any
+            # busy/ghost COM, using the dropdown selection only as a hint.
+            resolved = mavlink_dfu.find_mavlink_port(preferred=port, log=log)
+            if resolved and resolved != port:
+                log(f"Using {resolved} (responds to MAVLink) instead of {port or 'auto'}.")
+            port = resolved
             dfu_ready = False
             if port:
                 try:

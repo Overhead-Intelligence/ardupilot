@@ -29,34 +29,71 @@ class PortInfo:
         return f"{self.device} - {self.description}{v}"
 
 
+def _port_rank(p: PortInfo) -> tuple:
+    """Sort key: real MAVLink ports first, SLCAN/CAN/DFU/debug last."""
+    d = (p.description or "").lower()
+    is_mav = "mavlink" in d or "fmu" in d
+    is_aux = any(x in d for x in ("slcan", "can", "dfu", "debug", "bootloader"))
+    is_cube = p.vid in config.CUBE_USB_VIDS
+    bucket = 0 if is_mav else (2 if is_aux else 1)
+    return (bucket, not is_cube, p.device)
+
+
 def list_serial_ports() -> list[PortInfo]:
     ports = []
     for p in serial.tools.list_ports.comports():
         ports.append(PortInfo(p.device, p.description or "", p.vid, p.pid))
-    # Surface likely Cube/ArduPilot ports first.
-    ports.sort(key=lambda p: (p.vid not in config.CUBE_USB_VIDS, p.device))
+    ports.sort(key=_port_rank)   # MAVLink-looking ports first, SLCAN/CAN last
     return ports
 
 
-def autodetect_mavlink_port(log=print, per_port_timeout: float = 4.0) -> str | None:
-    """Try each serial port for a MAVLink heartbeat; return the first that answers."""
-    for p in list_serial_ports():
-        log(f"  probing {p.label} ...")
+def _has_heartbeat(port: str, timeout: float, log) -> bool:
+    """Open `port` briefly; True iff a MAVLink heartbeat arrives. Never raises
+    (access-denied / SLCAN / wrong ports just return False)."""
+    try:
+        m = mavutil.mavlink_connection(port, baud=config.MAVLINK_BAUD)
+    except Exception as e:  # noqa: BLE001 - busy/denied/ghost port
+        log(f"    {port}: cannot open ({e})")
+        return False
+    try:
+        if m.wait_heartbeat(timeout=timeout) is not None:
+            log(f"    {port}: MAVLink heartbeat (system {m.target_system})")
+            return True
+        log(f"    {port}: no heartbeat")
+        return False
+    except Exception as e:  # noqa: BLE001
+        log(f"    {port}: no heartbeat ({e})")
+        return False
+    finally:
         try:
-            m = mavutil.mavlink_connection(p.device, baud=config.MAVLINK_BAUD)
-        except Exception as e:  # noqa: BLE001 - report and move on
-            log(f"    open failed: {e}")
-            continue
-        try:
-            hb = m.wait_heartbeat(timeout=per_port_timeout)
-            if hb is not None:
-                log(f"    heartbeat from system {m.target_system} on {p.device}")
-                return p.device
-        except Exception as e:  # noqa: BLE001
-            log(f"    no heartbeat: {e}")
-        finally:
             m.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def find_mavlink_port(preferred: str | None = None, log=print,
+                      per_port_timeout: float = 4.0) -> str | None:
+    """Return the COM port that actually speaks MAVLink.
+
+    Tries `preferred` first (if given), then every other port in rank order, so
+    the autopilot's MAVLink port wins over its SLCAN port and any busy/ghost
+    port is skipped automatically.
+    """
+    order: list[str] = []
+    if preferred:
+        order.append(preferred)
+    for p in list_serial_ports():
+        if p.device not in order:
+            order.append(p.device)
+    log("Looking for the autopilot's MAVLink port ...")
+    for dev in order:
+        if _has_heartbeat(dev, per_port_timeout, log):
+            return dev
     return None
+
+
+def autodetect_mavlink_port(log=print, per_port_timeout: float = 4.0) -> str | None:
+    return find_mavlink_port(preferred=None, log=log, per_port_timeout=per_port_timeout)
 
 
 class PortBusyError(RuntimeError):
