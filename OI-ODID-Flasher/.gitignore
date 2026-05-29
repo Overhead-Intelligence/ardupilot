@@ -1,0 +1,13 @@
+# Build artefacts and fetched binaries (not source-controlled)
+/payload/
+/bin/
+/build/
+/dist/
+*.spec
+__pycache__/
+*.pyc
+
+# The committed Plane firmware images. The repo root .gitignore ignores all
+# *.apj, so re-include the ones we ship as the flashing payload.
+!firmware/
+!firmware/*.apj

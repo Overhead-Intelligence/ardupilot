@@ -1,0 +1,2 @@
+# Firmware images are payloads, not text. Never normalise line endings or diff.
+*.apj binary

@@ -1,0 +1,6 @@
+# Runtime + build dependencies for the CubeOrangePlus-ODID flasher.
+# Install with:  py -3 -m pip install -r requirements.txt
+pyserial>=3.5
+pymavlink>=2.4.40
+pyusb>=1.2.1          # optional: better DFU device detection (needs a libusb backend)
+pyinstaller>=6.0      # build only

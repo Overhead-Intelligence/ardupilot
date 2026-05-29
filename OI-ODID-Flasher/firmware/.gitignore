@@ -1,0 +1,3 @@
+# The repo root .gitignore ignores all *.apj. Re-include the firmware images
+# shipped here as the flasher payload.
+!*.apj
