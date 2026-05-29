@@ -59,14 +59,46 @@ def autodetect_mavlink_port(log=print, per_port_timeout: float = 4.0) -> str | N
     return None
 
 
+class PortBusyError(RuntimeError):
+    """The serial port is held by another program (Windows 'Access is denied')."""
+
+
+def _is_access_denied(exc: Exception) -> bool:
+    s = f"{exc}".lower()
+    return ("access is denied" in s or "permissionerror" in s
+            or "permission denied" in s or getattr(exc, "errno", None) == 13)
+
+
+def _open(port: str, log=print, attempts: int = 3, delay: float = 1.0):
+    """Open a MAVLink connection, retrying briefly. Raises PortBusyError if the
+    port stays locked by another application."""
+    last = None
+    for i in range(1, attempts + 1):
+        try:
+            return mavutil.mavlink_connection(port, baud=config.MAVLINK_BAUD)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if _is_access_denied(e):
+                log(f"  {port} is busy (attempt {i}/{attempts}); "
+                    f"another program may have it open.")
+                time.sleep(delay)
+                continue
+            raise
+    raise PortBusyError(
+        f"{port} is in use by another program. Close Mission Planner / "
+        f"QGroundControl / any serial monitor, unplug and replug the board, "
+        f"then retry. (last error: {last})")
+
+
 def reboot_to_dfu(port: str, log=print) -> None:
     """Connect on `port` and command the firmware into DFU mode.
 
-    Raises on connection / heartbeat failure. The board disappears from the
-    serial bus on success; the caller then waits for the DFU USB device.
+    Raises PortBusyError if the port is locked, or RuntimeError on heartbeat
+    failure. The board disappears from the serial bus on success; the caller
+    then waits for the DFU USB device.
     """
     log(f"Connecting to {port} ...")
-    m = mavutil.mavlink_connection(port, baud=config.MAVLINK_BAUD)
+    m = _open(port, log=log)
     try:
         hb = m.wait_heartbeat(timeout=10)
         if hb is None:

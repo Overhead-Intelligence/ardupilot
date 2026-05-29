@@ -318,6 +318,20 @@ class FlasherWizard(tk.Tk):
                 try:
                     mavlink_dfu.reboot_to_dfu(port, log=log)
                     dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
+                except mavlink_dfu.PortBusyError as e:
+                    # Port is held by another app -> let the user free it and retry.
+                    log(f"{e}")
+                    self._prompt_continue(
+                        f"{port} is in use by another program (Mission Planner, "
+                        "QGroundControl, a serial monitor, ...). Close it and "
+                        "DISCONNECT, then click Continue to retry."
+                    )
+                    try:
+                        retry_port = self._selected_port_device() or port
+                        mavlink_dfu.reboot_to_dfu(retry_port, log=log)
+                        dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
+                    except Exception as e2:  # noqa: BLE001
+                        log(f"Retry failed: {e2}")
                 except Exception as e:  # noqa: BLE001
                     log(f"Software reboot-to-DFU failed: {e}")
             if not dfu_ready:
