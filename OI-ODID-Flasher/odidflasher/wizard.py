@@ -11,6 +11,7 @@ import contextlib
 import os
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -283,24 +284,43 @@ class FlasherWizard(tk.Tk):
             return pref[0]
         return str(fws[0]) if fws else ""
 
-    def _enter_dfu(self, mav_port):
-        """Get a stock board into STM32 DFU mode (software, else manual BOOT0)."""
+    def _enter_dfu(self, hint_port):
+        """Get a stock board into STM32 DFU mode (software, else manual replug)."""
         log = self._log
+        # The board is rebooting out of the bootloader into firmware and will
+        # re-enumerate (possibly on a new COM); wait for the MAVLink port.
+        self._set_status("Waiting for firmware, then entering DFU ...")
+        mav = None
+        for _ in range(8):
+            mav = mavlink_dfu.find_mavlink_port(preferred=hint_port, log=log)
+            if mav:
+                break
+            time.sleep(3)
+
         dfu_ready = False
-        if mav_port:
+        if mav:
             try:
-                mavlink_dfu.reboot_to_dfu(mav_port, log=log)
-                dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
+                mavlink_dfu.reboot_to_dfu(mav, log=log)
+                dfu_ready = dfu.wait_for_dfu(timeout=15, log=log)
             except mavlink_dfu.PortBusyError as e:  # noqa: BLE001
                 log(f"{e}")
             except Exception as e:  # noqa: BLE001
                 log(f"Software reboot-to-DFU failed: {e}")
+        else:
+            log("Could not find the firmware MAVLink port to command DFU.")
+
         if not dfu_ready:
-            log("Falling back to the manual DFU method.")
+            # After the DFU command the board often needs a USB re-enumeration;
+            # a board without DFU support needs BOOT0 held while powering up.
             self._prompt_continue(
-                "MANUAL DFU: unplug the board, hold BOOT0 high (jumper the BOOT0 "
-                "pad to 3.3V), plug USB back in, then click Continue.")
-            dfu_ready = dfu.wait_for_dfu(timeout=45, log=log)
+                "Almost there - the board needs a USB re-plug to appear in DFU:\n"
+                "  1. UNPLUG the flight controller.\n"
+                "  2. Wait ~3 seconds.\n"
+                "  3. Plug it back in.\n"
+                "  (If it still isn't detected, hold the BOOT0 pad high while "
+                "plugging in.)\n"
+                "Then click Continue.")
+            dfu_ready = dfu.wait_for_dfu(timeout=40, log=log)
         if not dfu_ready:
             raise RuntimeError(
                 "DFU device never appeared. See the README for the BOOT0 method.")
@@ -361,8 +381,8 @@ class FlasherWizard(tk.Tk):
             if board_id is not None:
                 log(f"Bootloader board id: {board_id}")
 
-            try:
-                if board_id == config.BOARD_ID_ODID:
+            if board_id == config.BOARD_ID_ODID:
+                try:
                     log("Board already has the ODID bootloader - no DFU or "
                         "driver needed; uploading firmware directly.")
                     self._set_status("Uploading firmware (board already ODID)")
@@ -374,15 +394,23 @@ class FlasherWizard(tk.Tk):
                         "Firmware flashed successfully (board already had the "
                         "ODID bootloader).")))
                     return
-                if board_id is not None:
-                    log(f"Bootloader is stock (id {board_id}); the one-time ODID "
-                        "conversion is required.")
-            finally:
-                if up is not None:
+                finally:
                     try:
                         up.close()
                     except Exception:  # noqa: BLE001
                         pass
+
+            if board_id is not None:
+                log(f"Bootloader is stock (id {board_id}); the one-time ODID "
+                    "conversion is required.")
+                # Boot firmware so it can receive the reboot-to-DFU command
+                # (param1=3 left it held in the bootloader).
+                fw_upload.boot_firmware(up, log=log)   # closes `up`
+            elif up is not None:
+                try:
+                    up.close()
+                except Exception:  # noqa: BLE001
+                    pass
 
             # -- Stage 2: one-time ODID bootloader conversion via DFU ---------
             self._set_status("One-time ODID bootloader conversion (DFU)")

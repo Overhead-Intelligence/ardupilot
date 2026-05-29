@@ -169,17 +169,23 @@ def reboot_to_dfu(port: str, log=print) -> None:
         if hb is None:
             raise RuntimeError(f"No MAVLink heartbeat on {port}")
         log(f"Connected (system {m.target_system}). Commanding reboot-to-DFU ...")
+        # Requires the full magic: param1=42, param2=24, param3=71, param4=99.
         m.mav.command_long_send(
             m.target_system,
             m.target_component,
             mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
             0,                              # confirmation
-            0, 0, 0,                        # param1-3
-            config.REBOOT_TO_DFU_MAGIC,     # param4 == 99 -> boot_to_dfu()
+            config.REBOOT_MAGIC_P1,         # param1 = 42
+            config.REBOOT_MAGIC_P2,         # param2 = 24
+            config.REBOOT_MAGIC_P3,         # param3 = 71
+            config.REBOOT_TO_DFU_MAGIC,     # param4 = 99 -> boot_to_dfu()
             0, 0, 0,                        # param5-7
         )
-        # The board reboots immediately; we don't expect an ACK back.
+        # The board reboots immediately and the USB port drops; that's expected.
         time.sleep(1.0)
         log("Reboot-to-DFU command sent.")
     finally:
-        m.close()
+        try:
+            m.close()
+        except Exception:  # noqa: BLE001 - port already gone after reboot
+            pass

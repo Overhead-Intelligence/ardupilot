@@ -25,10 +25,14 @@ BOARD_ID_ODID = 11063         # AP_HW_CUBEORANGEPLUS_ODID
 CUBE_USB_VIDS = (0x2DAE, 0x1209, 0x0483)
 
 # --- MAVLink reboot-to-DFU ---------------------------------------------------
-# ArduPilot interprets MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN with param4 == 99 as
-# "reboot into DFU" (GCS_Common.cpp), gated on HAL_ENABLE_DFU_BOOT which the
-# stock CubeOrange/CubeOrangePlus firmware enables (CubeOrange/hwdef.inc:320).
-REBOOT_TO_DFU_MAGIC = 99.0
+# ArduPilot's MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN "enter DFU" action is gated by a
+# magic sequence in param1..param3, then the action code 99 in param4
+# (GCS_Common.cpp handle_preflight_reboot: param1==42 && param2==24 && param3==71,
+# then param4==99 -> boot_to_dfu()). All four are required.
+REBOOT_MAGIC_P1 = 42.0
+REBOOT_MAGIC_P2 = 24.0
+REBOOT_MAGIC_P3 = 71.0
+REBOOT_TO_DFU_MAGIC = 99.0   # param4 action code
 MAVLINK_BAUD = 115200
 
 # --- Bundled asset filenames (resolved by assets.py) -------------------------

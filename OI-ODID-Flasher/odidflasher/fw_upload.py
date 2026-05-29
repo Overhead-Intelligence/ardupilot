@@ -93,6 +93,24 @@ def wait_for_bootloader_port(timeout: float = 30.0, log=print) -> str | None:
     return port
 
 
+def boot_firmware(up, log=print) -> None:
+    """Tell an open bootloader connection to boot the application firmware.
+
+    Used to get a board out of the (held) bootloader so the running firmware can
+    receive the reboot-to-DFU command. Best-effort; closes the connection.
+    """
+    try:
+        up._uploader__reboot()   # bootloader REBOOT -> jump to app
+        log("Booting firmware ...")
+    except Exception as e:  # noqa: BLE001
+        log(f"  could not command firmware boot: {e}")
+    finally:
+        try:
+            up.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def upload_on(up, apj_path: str, force: bool = False, log=print) -> None:
     """Upload `apj_path` using an already-open, synced uploader. Raises on error."""
     up_mod = _load_uploader()
