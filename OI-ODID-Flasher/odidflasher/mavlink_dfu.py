@@ -127,6 +127,34 @@ def _open(port: str, log=print, attempts: int = 3, delay: float = 1.0):
         f"then retry. (last error: {last})")
 
 
+def reboot_to_bootloader(port: str, log=print) -> bool:
+    """Command the running firmware to reboot into the ArduPilot bootloader.
+
+    Used to read the board id and to upload firmware. Returns True if the
+    command was sent. Non-destructive (no flash write).
+    """
+    log(f"Rebooting {port} into the bootloader ...")
+    try:
+        m = _open(port, log=log, attempts=2)
+    except Exception as e:  # noqa: BLE001
+        log(f"  could not open {port}: {e}")
+        return False
+    try:
+        if m.wait_heartbeat(timeout=10) is None:
+            log(f"  no heartbeat on {port}")
+            return False
+        m.mav.command_long_send(
+            m.target_system, m.target_component,
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+            0, 3, 0, 0, 0, 0, 0, 0,   # param1=3 -> reboot to bootloader
+        )
+        time.sleep(1.0)
+        log("Reboot-to-bootloader command sent.")
+        return True
+    finally:
+        m.close()
+
+
 def reboot_to_dfu(port: str, log=print) -> None:
     """Connect on `port` and command the firmware into DFU mode.
 

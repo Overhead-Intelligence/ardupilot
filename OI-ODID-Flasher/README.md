@@ -29,19 +29,20 @@ HTTPS, and walks the operator through the one-time USB-driver install.
 `Overhead-Intelligence/ardupilot @ OI-4.7-dev` into a local cache folder. Re-runs
 reuse the cache; **Download firmware** re-pulls the latest.
 
-**Stage 1 — Enter DFU.** Connects to the running firmware over MAVLink and sends
-`MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` with `param4 = 99`, which the stock Cube
-Orange+ firmware (built with `HAL_ENABLE_DFU_BOOT`) interprets as "reboot into
-the STM32 ROM DFU bootloader". **No need to open the Cube.** If that fails, the
-app prompts you to jumper **BOOT0** high and replug.
+**Stage 1 — Identify the board.** Reboots into the ArduPilot bootloader and reads
+its board id. **If the board is already the ODID bootloader (`11063`) — which it
+is once converted — the app skips DFU entirely and just uploads firmware (no
+driver, no Zadig, no admin).** Only a stock board (`1063`) needs the one-time
+conversion below.
 
-**Stage 2 — Flash the ODID bootloader.** Makes sure the WinUSB driver is bound
-to the DFU device (see *DFU driver* below), then `dfu-util` writes the ODID
-bootloader to `0x08000000`. *(This is the irreversible step.)*
+**Stage 2 (stock boards only) — Flash the ODID bootloader.** Enters DFU
+(`MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` `param4=99`, or the manual BOOT0 fallback),
+makes sure the WinUSB driver is bound (see *DFU driver*), then `dfu-util` writes
+the ODID bootloader to `0x08000000`. *(This is the one-time, irreversible step.)*
 
-**Stage 3 — Flash the firmware.** The board reboots into the ODID bootloader; the
-app uploads the selected Plane `.apj` via ArduPilot's `uploader.py` protocol.
-The board-id check guarantees only ODID firmware (board id `11063`) is loaded.
+**Stage 3 — Flash the firmware.** Uploads the selected Plane `.apj` through the
+ODID bootloader via ArduPilot's `uploader.py` protocol. The board-id check
+guarantees only ODID firmware (board id `11063`) is loaded.
 
 ### Firmware images (picked at runtime)
 

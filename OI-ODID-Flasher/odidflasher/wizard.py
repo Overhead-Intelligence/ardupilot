@@ -283,6 +283,28 @@ class FlasherWizard(tk.Tk):
             return pref[0]
         return str(fws[0]) if fws else ""
 
+    def _enter_dfu(self, mav_port):
+        """Get a stock board into STM32 DFU mode (software, else manual BOOT0)."""
+        log = self._log
+        dfu_ready = False
+        if mav_port:
+            try:
+                mavlink_dfu.reboot_to_dfu(mav_port, log=log)
+                dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
+            except mavlink_dfu.PortBusyError as e:  # noqa: BLE001
+                log(f"{e}")
+            except Exception as e:  # noqa: BLE001
+                log(f"Software reboot-to-DFU failed: {e}")
+        if not dfu_ready:
+            log("Falling back to the manual DFU method.")
+            self._prompt_continue(
+                "MANUAL DFU: unplug the board, hold BOOT0 high (jumper the BOOT0 "
+                "pad to 3.3V), plug USB back in, then click Continue.")
+            dfu_ready = dfu.wait_for_dfu(timeout=45, log=log)
+        if not dfu_ready:
+            raise RuntimeError(
+                "DFU device never appeared. See the README for the BOOT0 method.")
+
     def _run_flow(self):
         log = self._log
         try:
@@ -308,64 +330,84 @@ class FlasherWizard(tk.Tk):
 
             port = self._selected_port_device()
 
-            # -- Stage 1: enter DFU -------------------------------------------
-            self._set_status("Stage 1/3: entering DFU mode")
-            # Resolve the *actual* MAVLink port by heartbeat: this picks the
-            # autopilot's Mavlink port over its SLCAN port and skips any
-            # busy/ghost COM, using the dropdown selection only as a hint.
-            resolved = mavlink_dfu.find_mavlink_port(preferred=port, log=log)
-            if resolved and resolved != port:
-                log(f"Using {resolved} (responds to MAVLink) instead of {port or 'auto'}.")
-            port = resolved
-            dfu_ready = False
-            if port:
+            # -- Stage 1: identify the board's bootloader ---------------------
+            # Reboot to the ArduPilot bootloader and read its board id. If it is
+            # already the ODID bootloader (11063) we can skip DFU entirely and
+            # just upload firmware -- no driver, no Zadig, no admin.
+            self._set_status("Stage 1: checking the board")
+            mav_port = mavlink_dfu.find_mavlink_port(preferred=port, log=log)
+            if mav_port and mav_port != port:
+                log(f"Using {mav_port} (responds to MAVLink).")
+            if mav_port:
                 try:
-                    mavlink_dfu.reboot_to_dfu(port, log=log)
-                    dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
+                    mavlink_dfu.reboot_to_bootloader(mav_port, log=log)
                 except mavlink_dfu.PortBusyError as e:
-                    # Port is held by another app -> let the user free it and retry.
                     log(f"{e}")
                     self._prompt_continue(
-                        f"{port} is in use by another program (Mission Planner, "
-                        "QGroundControl, a serial monitor, ...). Close it and "
-                        "DISCONNECT, then click Continue to retry."
-                    )
+                        f"{mav_port} is in use by another program (Mission "
+                        "Planner / QGC / a serial monitor). Close it and "
+                        "DISCONNECT, then click Continue.")
                     try:
-                        retry_port = self._selected_port_device() or port
-                        mavlink_dfu.reboot_to_dfu(retry_port, log=log)
-                        dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
+                        mavlink_dfu.reboot_to_bootloader(mav_port, log=log)
                     except Exception as e2:  # noqa: BLE001
                         log(f"Retry failed: {e2}")
                 except Exception as e:  # noqa: BLE001
-                    log(f"Software reboot-to-DFU failed: {e}")
-            if not dfu_ready:
-                log("Falling back to the manual DFU method.")
-                self._prompt_continue(
-                    "MANUAL DFU: unplug the board, hold BOOT0 high (jumper the "
-                    "BOOT0 pad to 3.3V), plug USB back in, then click Continue."
-                )
-                dfu_ready = dfu.wait_for_dfu(timeout=30, log=log)
-            if not dfu_ready:
-                raise RuntimeError("DFU device never appeared. See README for the BOOT0 method.")
+                    log(f"Could not reboot to bootloader: {e}")
 
-            # -- Stage 2: driver + bootloader ---------------------------------
-            self._set_status("Stage 2/3: flashing ODID bootloader")
+            with contextlib.redirect_stdout(_StreamToLog(log)), \
+                    contextlib.redirect_stderr(_StreamToLog(log)):
+                up, _bl_port = fw_upload.open_bootloader(timeout=30, log=log)
+            board_id = up.board_type if up is not None else None
+            if board_id is not None:
+                log(f"Bootloader board id: {board_id}")
+
+            try:
+                if board_id == config.BOARD_ID_ODID:
+                    log("Board already has the ODID bootloader - no DFU or "
+                        "driver needed; uploading firmware directly.")
+                    self._set_status("Uploading firmware (board already ODID)")
+                    with contextlib.redirect_stdout(_StreamToLog(log)), \
+                            contextlib.redirect_stderr(_StreamToLog(log)):
+                        fw_upload.upload_on(up, apj, log=log)
+                    self._set_status("Done.")
+                    self._q.put(("done", (True,
+                        "Firmware flashed successfully (board already had the "
+                        "ODID bootloader).")))
+                    return
+                if board_id is not None:
+                    log(f"Bootloader is stock (id {board_id}); the one-time ODID "
+                        "conversion is required.")
+            finally:
+                if up is not None:
+                    try:
+                        up.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            # -- Stage 2: one-time ODID bootloader conversion via DFU ---------
+            self._set_status("One-time ODID bootloader conversion (DFU)")
+            self._enter_dfu(mav_port)
             if not dfu.ensure_driver(log=log, guide=self._prompt_continue):
                 raise RuntimeError("Could not install the WinUSB driver for DFU.")
             dfu.flash_bootloader(log=log, leave=True)
 
-            # -- Stage 3: firmware --------------------------------------------
-            self._set_status("Stage 3/3: uploading firmware")
+            # -- Stage 3: upload firmware via the (now ODID) bootloader -------
+            self._set_status("Uploading firmware")
             self._prompt_continue(
                 "Bootloader installed. If the board does not auto-detect, unplug "
-                "and replug it (normally, no BOOT0), then click Continue."
-            )
+                "and replug it (normally, no BOOT0), then click Continue.")
             with contextlib.redirect_stdout(_StreamToLog(log)), \
                     contextlib.redirect_stderr(_StreamToLog(log)):
-                bl_port = fw_upload.wait_for_bootloader_port(timeout=40, log=log)
-                if not bl_port:
+                up2, _ = fw_upload.open_bootloader(timeout=40, log=log)
+                if up2 is None:
                     raise RuntimeError("ODID bootloader serial port not found.")
-                fw_upload.upload_firmware(bl_port, apj, log=log)
+                try:
+                    fw_upload.upload_on(up2, apj, log=log)
+                finally:
+                    try:
+                        up2.close()
+                    except Exception:  # noqa: BLE001
+                        pass
 
             self._set_status("Done.")
             self._q.put(("done", (True, "Bootloader + firmware flashed successfully.")))

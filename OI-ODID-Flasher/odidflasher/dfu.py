@@ -37,17 +37,39 @@ def dfu_device_present() -> bool:
     return needle.lower() in (res.stdout + res.stderr).lower()
 
 
-def usb_device_attached() -> bool:
-    """True if the DFU VID/PID is on the USB bus at all (driver may be wrong).
+def _pnp_dfu_present() -> bool:
+    """True if Windows sees the DFU device, regardless of which driver is bound.
 
-    Uses pyusb if available; otherwise falls back to the dfu-util check.
+    This is the reliable pre-driver check: libusb/dfu-util can't open the device
+    until WinUSB is installed, but Windows PnP lists it as soon as it enumerates.
     """
+    vidpid = f"VID_{config.DFU_VID:04X}&PID_{config.DFU_PID:04X}"
+    cmd = ("if (Get-PnpDevice -PresentOnly | "
+           f"Where-Object {{ $_.InstanceId -match '{vidpid}' }}) "
+           "{ 'YES' } else { 'NO' }")
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd],
+            capture_output=True, text=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return "YES" in (res.stdout or "")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def usb_device_attached() -> bool:
+    """True if the DFU VID/PID is on the USB bus at all (any/no driver)."""
+    # Windows PnP first -- sees the device before the WinUSB driver is installed.
+    if _pnp_dfu_present():
+        return True
     try:
         import usb.core  # type: ignore
-
-        return usb.core.find(idVendor=config.DFU_VID, idProduct=config.DFU_PID) is not None
+        if usb.core.find(idVendor=config.DFU_VID, idProduct=config.DFU_PID) is not None:
+            return True
     except Exception:  # noqa: BLE001 - pyusb optional / no backend
-        return dfu_device_present()
+        pass
+    return dfu_device_present()
 
 
 def wait_for_dfu(timeout: float = 30.0, log=print) -> bool:
