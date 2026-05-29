@@ -28,19 +28,18 @@ def _guard_streams() -> None:
 
 
 def _self_check() -> int:
-    from . import config, repo
+    from . import config, fetch
 
     print("Asset check:")
-    # If a repo was already cloned at the default location, resolve against it.
-    d = repo.default_clone_dir()
-    if (d / ".git").exists():
+    # If firmware was downloaded before, resolve against that cache.
+    d = fetch.default_cache_dir()
+    if (d / config.REPO_FIRMWARE_SUBDIR).is_dir():
         assets.set_repo_root(d)
-        print(f"  repo (cloned): {d}")
+        print(f"  firmware cache: {d}")
     else:
-        print(f"  repo: not cloned yet (would clone {config.REPO_URL} @ {config.REPO_BRANCH})")
-    print(f"  git on PATH: {repo.git_available()}")
+        print(f"  firmware cache: empty (would download from {config.RAW_BASE})")
     print(f"  dfu-util:    {assets.dfu_util()}  exists={assets.dfu_util().is_file()}")
-    print(f"  wdi-simple:  {assets.wdi_simple()}  exists={assets.wdi_simple().is_file()}")
+    print(f"  zadig:       {assets.zadig()}  exists={assets.zadig().is_file()}")
     print(f"  bootloader:  {assets.bootloader_bin()}  exists={assets.bootloader_bin().is_file()}")
     for p in assets.list_firmware():
         print(f"  firmware:    {p}")
@@ -48,7 +47,7 @@ def _self_check() -> int:
     problems = assets.missing_assets()   # bundle-only requirement: dfu-util
     up = assets.uploader_py()
     if up is None:
-        print("  uploader.py: not found (needs repo clone)")
+        print("  uploader.py: not downloaded yet (fetched with firmware)")
     else:
         try:
             from . import fw_upload

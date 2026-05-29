@@ -14,7 +14,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from . import assets, config, dfu, fw_upload, mavlink_dfu, repo
+from . import assets, config, dfu, fetch, fw_upload, mavlink_dfu
 
 WARNING_TEXT = (
     "This will install the CubeOrangePlus-ODID bootloader and is a ONE-TIME, "
@@ -80,11 +80,11 @@ class FlasherWizard(tk.Tk):
         top = ttk.Frame(self)
         top.pack(fill="x", **pad)
 
-        ttk.Label(top, text="Repo folder:").grid(row=0, column=0, sticky="w")
-        self.repo_var = tk.StringVar(value=str(repo.default_clone_dir()))
+        ttk.Label(top, text="Firmware folder:").grid(row=0, column=0, sticky="w")
+        self.repo_var = tk.StringVar(value=str(fetch.default_cache_dir()))
         self.repo_entry = ttk.Entry(top, textvariable=self.repo_var, width=60)
         self.repo_entry.grid(row=0, column=1, sticky="we", padx=4)
-        self.clone_btn = ttk.Button(top, text="Clone / Update", command=self._start_clone)
+        self.clone_btn = ttk.Button(top, text="Download firmware", command=self._start_download)
         self.clone_btn.grid(row=0, column=2)
 
         ttk.Label(top, text="Firmware:").grid(row=1, column=0, sticky="w")
@@ -124,9 +124,9 @@ class FlasherWizard(tk.Tk):
 
     def _check_assets(self):
         problems = assets.missing_assets()   # dfu-util only
-        # If a repo was cloned in a previous run, reuse it automatically.
-        d = repo.default_clone_dir()
-        if (d / ".git").exists():
+        # Reuse a previous download if the cache folder already has firmware.
+        d = fetch.default_cache_dir()
+        if (d / config.REPO_FIRMWARE_SUBDIR).is_dir():
             assets.set_repo_root(d)
             self.repo_var.set(str(d))
         self._refresh_firmware()
@@ -138,12 +138,9 @@ class FlasherWizard(tk.Tk):
             self._log("Rebuild the exe with build.ps1 (see README).")
         else:
             self._log("dfu-util present.")
-        if assets.repo_root() is None:
-            self._log("Firmware comes from the repo. Click 'Clone / Update' "
-                      "(or just click Flash to clone automatically).")
-        if not repo.git_available():
-            self._log("WARNING: git not found on PATH - install Git for Windows "
-                      "to clone the repo.")
+        if not assets.list_firmware():
+            self._log("Firmware downloads from GitHub over HTTPS (no Git needed). "
+                      "Click 'Download firmware', or just click Flash.")
         for w in assets.optional_warnings():
             self._log("NOTE: " + w)
         self._update_buttons()
@@ -230,29 +227,29 @@ class FlasherWizard(tk.Tk):
             state="normal" if (self.ack_var.get() and not busy) else "disabled")
         self.clone_btn.configure(state="disabled" if busy else "normal")
 
-    # ----------------------------------------------------------------- clone
-    def _start_clone(self):
+    # -------------------------------------------------------------- download
+    def _start_download(self):
         if self._busy_flag:
             return
         self._busy_flag = True
         self._update_buttons()
-        self._worker = threading.Thread(target=self._clone_worker, daemon=True)
+        self._worker = threading.Thread(target=self._download_worker, daemon=True)
         self._worker.start()
 
-    def _clone_worker(self):
+    def _download_worker(self):
         log = self._log
         try:
-            dest = self.repo_var.get().strip() or str(repo.default_clone_dir())
-            self._set_status("Cloning / updating repository ...")
-            repo.clone_or_update(dest, log=log)
+            dest = self.repo_var.get().strip() or str(fetch.default_cache_dir())
+            self._set_status("Downloading firmware ...")
+            fetch.fetch_all(dest, log=log)
             assets.set_repo_root(dest)
             self._q.put(("refresh_fw", None))
-            self._set_status("Repository ready.")
+            self._set_status("Firmware ready.")
             self._q.put(("done", (None, None)))   # re-enable buttons, no dialog
         except Exception as e:  # noqa: BLE001
             log(f"ERROR: {e}")
-            self._set_status("Clone failed.")
-            self._q.put(("done", (False, f"Clone failed:\n{e}")))
+            self._set_status("Download failed.")
+            self._q.put(("done", (False, f"Firmware download failed:\n{e}")))
 
     def _on_continue(self):
         self.continue_btn.configure(state="disabled")
@@ -289,11 +286,11 @@ class FlasherWizard(tk.Tk):
     def _run_flow(self):
         log = self._log
         try:
-            # -- Stage 0: ensure the repo (firmware source) is present --------
+            # -- Stage 0: ensure firmware is downloaded -----------------------
             if assets.repo_root() is None or not assets.list_firmware():
-                self._set_status("Preparing firmware (cloning repository) ...")
-                dest = self.repo_var.get().strip() or str(repo.default_clone_dir())
-                repo.clone_or_update(dest, log=log)
+                self._set_status("Preparing firmware (downloading) ...")
+                dest = self.repo_var.get().strip() or str(fetch.default_cache_dir())
+                fetch.fetch_all(dest, log=log)
                 assets.set_repo_root(dest)
                 self._q.put(("refresh_fw", None))
 
@@ -335,7 +332,7 @@ class FlasherWizard(tk.Tk):
 
             # -- Stage 2: driver + bootloader ---------------------------------
             self._set_status("Stage 2/3: flashing ODID bootloader")
-            if not dfu.ensure_driver(log=log):
+            if not dfu.ensure_driver(log=log, guide=self._prompt_continue):
                 raise RuntimeError("Could not install the WinUSB driver for DFU.")
             dfu.flash_bootloader(log=log, leave=True)
 

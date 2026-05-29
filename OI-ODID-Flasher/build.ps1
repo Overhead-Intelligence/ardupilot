@@ -1,10 +1,10 @@
 <#
 build.ps1 - produce the single-file flasher .exe with PyInstaller.
 
-The exe bundles ONLY the native Windows helpers (dfu-util.exe, wdi-simple.exe).
-The firmware, the ODID bootloader, and uploader.py are pulled at runtime from
-the cloned Overhead-Intelligence/ardupilot repo (see odidflasher/repo.py), so
-they are NOT baked into the exe.
+The exe bundles ONLY the native Windows helpers (dfu-util.exe, zadig.exe, and
+optionally wdi-simple.exe). The firmware, the ODID bootloader, and uploader.py
+are downloaded at runtime over HTTPS (see odidflasher/fetch.py), so they are
+NOT baked into the exe.
 
 Run from Windows (NOT WSL) in this folder:
     py -3 -m pip install -r requirements.txt
@@ -26,11 +26,16 @@ $dfu = Join-Path $here "bin\dfu-util.exe"
 if (-not (Test-Path $dfu)) { throw "Missing dfu-util.exe in bin\ - run fetch_binaries.ps1 first" }
 Copy-Item $dfu (Join-Path $payload "bin")
 
+$zadig = Join-Path $here "bin\zadig.exe"
+if (Test-Path $zadig) {
+    Copy-Item $zadig (Join-Path $payload "bin")
+} else {
+    Write-Warning "zadig.exe not present - guided driver install disabled (run fetch_binaries.ps1)."
+}
+
 $wdi = Join-Path $here "bin\wdi-simple.exe"
 if (Test-Path $wdi) {
     Copy-Item $wdi (Join-Path $payload "bin")
-} else {
-    Write-Warning "wdi-simple.exe not present - auto driver install disabled (install driver via Zadig/CubeProgrammer)."
 }
 
 $libusb = Join-Path $here "bin\libusb-1.0.dll"
@@ -48,4 +53,4 @@ py -3 -m PyInstaller `
     flasher.py
 
 Write-Host "==> Done. Output: $(Join-Path $here 'dist\CubeOrangePlus-ODID-Flasher.exe')"
-Write-Host "    The exe clones the repo on first run to fetch firmware."
+Write-Host "    The exe downloads firmware over HTTPS on first run."

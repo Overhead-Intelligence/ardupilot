@@ -1,13 +1,12 @@
 <#
 fetch_binaries.ps1 - download the native helper executables into .\bin
 
-  * dfu-util.exe + libusb-1.0.dll   (DFU flashing)        - REQUIRED
-  * wdi-simple.exe                  (auto WinUSB install)  - OPTIONAL
+  * dfu-util.exe + libusb-1.0.dll   (DFU flashing)         - REQUIRED
+  * zadig.exe                       (WinUSB driver install) - REQUIRED
+  * wdi-simple.exe                  (silent driver install) - OPTIONAL
 
-If wdi-simple.exe cannot be fetched automatically, the flasher still works as
-long as the WinUSB/libusb driver is bound to the "STM32 BOOTLOADER" device by
-some other means (Zadig, or installing STM32CubeProgrammer). The app detects an
-existing driver and skips the auto-install step.
+Zadig is the GUI driver installer the app auto-launches when the DFU driver is
+missing. wdi-simple (if you supply it) enables a fully silent install instead.
 
 Edit the URLs below if a version moves. Run from Windows in this folder.
 #>
@@ -38,6 +37,14 @@ Copy-Item $dfuExe.FullName (Join-Path $bin "dfu-util.exe") -Force
 $libusb = Get-ChildItem -Path $dfuExe.Directory -Filter libusb-1.0.dll | Select-Object -First 1
 if ($libusb) { Copy-Item $libusb.FullName (Join-Path $bin "libusb-1.0.dll") -Force }
 Write-Host "    dfu-util.exe ready."
+
+# --- Zadig (REQUIRED for guided driver install) -----------------------------
+# Stable asset from the libwdi release. The app auto-launches this when the
+# WinUSB driver is missing.
+$zadigUrl = "https://github.com/pbatard/libwdi/releases/download/v1.5.1/zadig-2.9.exe"
+Write-Host "==> Downloading Zadig from $zadigUrl"
+Invoke-WebRequest -Uri $zadigUrl -OutFile (Join-Path $bin "zadig.exe")
+Write-Host "    zadig.exe ready."
 
 # --- wdi-simple (OPTIONAL) --------------------------------------------------
 # libwdi ships wdi-simple as an example binary. Releases live at:

@@ -34,24 +34,33 @@ MAVLINK_BAUD = 115200
 # --- Bundled asset filenames (resolved by assets.py) -------------------------
 BOOTLOADER_BIN = "CubeOrangePlus-ODID_bl.bin"
 DFU_UTIL_EXE = "dfu-util.exe"
-WDI_SIMPLE_EXE = "wdi-simple.exe"
-FIRMWARE_DIR = "firmware"     # folder of selectable *.apj images
+WDI_SIMPLE_EXE = "wdi-simple.exe"   # optional silent driver install (not shipped by libwdi)
+ZADIG_EXE = "zadig.exe"             # bundled GUI driver installer (auto-launched)
+FIRMWARE_DIR = "firmware"           # folder of selectable *.apj images
 
-# --- Source repository (the app clones this to fetch firmware) ---------------
-# HTTPS (not the SSH "git@" remote) so it works on a fresh machine. If the repo
-# is private, git will prompt for credentials via the Windows credential helper.
-REPO_URL = "https://github.com/Overhead-Intelligence/ardupilot.git"
+# --- Firmware source: direct HTTPS download (no Git needed) ------------------
+# The app downloads just the files it needs from the fork over HTTPS into a
+# local cache folder, mirroring the repo's paths so assets.py resolves them.
+REPO_OWNER = "Overhead-Intelligence"
+REPO_NAME = "ardupilot"
 REPO_BRANCH = "OI-4.7-dev"
-REPO_CLONE_DEPTH = 1          # shallow; we only need committed files, not history
-REPO_SUBMODULES = False       # not needed for flashing (only for building)
+RAW_BASE = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/{REPO_BRANCH}"
 
-# Paths *inside* the cloned repo where the flasher finds what it needs.
+# Paths within the repo (also used as raw URL suffixes and local cache layout).
 REPO_FIRMWARE_SUBDIR = "OI-ODID-Flasher/firmware"
 REPO_BOOTLOADER_PATH = "Tools/bootloaders/CubeOrangePlus-ODID_bl.bin"
 REPO_UPLOADER_PATH = "Tools/scripts/uploader.py"
 
-# Default folder to clone into (overridable in the UI).
-DEFAULT_CLONE_DIRNAME = "OI-ardupilot"   # under %LOCALAPPDATA%\OI-ODID-Flasher
+# GitHub contents API to enumerate firmware images (falls back to KNOWN_FIRMWARE).
+CONTENTS_API = (f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/"
+                f"{REPO_FIRMWARE_SUBDIR}?ref={REPO_BRANCH}")
+KNOWN_FIRMWARE = [
+    "arduplane_CubeOrangePlus-ODID_DID-RNGFND-TERR.apj",
+    "arduplane_CubeOrangePlus-ODID_ODID-CMTC-RNGFND.apj",
+]
+
+# Local cache folder (overridable in the UI), under %LOCALAPPDATA%\OI-ODID-Flasher.
+DEFAULT_CACHE_DIRNAME = "firmware-cache"
 
 # Prefer the firmware image whose name contains this tag when auto-selecting.
 PREFERRED_FIRMWARE_TAG = "TERR"

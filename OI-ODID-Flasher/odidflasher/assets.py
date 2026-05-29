@@ -54,6 +54,10 @@ def wdi_simple() -> Path:
     return bin_path(config.WDI_SIMPLE_EXE)
 
 
+def zadig() -> Path:
+    return bin_path(config.ZADIG_EXE)
+
+
 def bootloader_bin() -> Path:
     """Prefer the cloned repo's bootloader; fall back to a bundled copy."""
     if _repo_root:
@@ -111,12 +115,11 @@ def flash_readiness() -> list[str]:
 
 
 def optional_warnings() -> list[str]:
-    """Non-fatal gaps. wdi-simple is only needed if the WinUSB driver is absent."""
+    """Non-fatal gaps in the driver-install helpers."""
     warnings: list[str] = []
-    if not wdi_simple().is_file():
+    if not zadig().is_file() and not wdi_simple().is_file():
         warnings.append(
-            "wdi-simple.exe not bundled: automatic DFU-driver install is "
-            "disabled. Install the WinUSB driver once via Zadig or "
-            "STM32CubeProgrammer if dfu-util cannot see the board."
+            "No DFU-driver installer bundled (Zadig/wdi-simple). If dfu-util "
+            "cannot see the board, install the WinUSB driver manually."
         )
     return warnings
