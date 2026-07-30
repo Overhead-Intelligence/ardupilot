@@ -122,6 +122,14 @@ public:
     // estimation is active
     bool getWind(Vector3f &wind) const;
 
+    // set the NE wind velocity states (m/s, NED earth frame) from an external estimate on all
+    // cores. variance is the (m/s)^2 confidence applied to the wind states. Used for wind
+    // dead-reckoning seeding via MAV_CMD_EXTERNAL_WIND_ESTIMATE.
+    void setWindState(const Vector2f &wind_ne, float variance);
+
+    // return the active horizontal velocity source (EK3_SRCn_VELXY for the active source set)
+    AP_NavEKF_Source::SourceXY getActiveVelXYSource(void) const { return sources.getVelXYSource(); }
+
     // return earth magnetic field estimates in measurement units / 1000
     void getMagNED(Vector3f &magNED) const;
 

@@ -1050,6 +1050,25 @@ void NavEKF3_core::writeDefaultAirSpeed(float airspeed, float uncertainty)
     defaultAirSpeedVariance = sq(uncertainty);
 }
 
+// Set the NE wind velocity states (m/s, NED earth frame) from an external estimate and reset
+// their covariance to the supplied variance ((m/s)^2). Intended for wind dead-reckoning where
+// the EKF cannot observe wind internally (wind states inhibited), so the value persists until
+// the next external update or an estimator reset.
+void NavEKF3_core::setWindState(const Vector2f &wind_ne, float variance)
+{
+    stateStruct.wind_vel.x = wind_ne.x;
+    stateStruct.wind_vel.y = wind_ne.y;
+
+    // reset the wind state covariance to reflect the confidence of the external estimate
+    zeroRows(P, 22, 23);
+    zeroCols(P, 22, 23);
+    P[22][22] = P[23][23] = constrain_ftype(variance, WIND_VEL_VARIANCE_MIN, WIND_VEL_VARIANCE_MAX);
+
+    // mark the wind estimate as externally supplied so getWind() reports it as valid even
+    // while the wind states are inhibited (i.e. not being learned internally)
+    externalWindActive = true;
+}
+
 /********************************************************
 *            External Navigation Measurements           *
 ********************************************************/

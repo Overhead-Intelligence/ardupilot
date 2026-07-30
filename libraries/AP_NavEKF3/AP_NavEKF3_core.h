@@ -201,6 +201,10 @@ public:
     // returns true if wind state estimation is active
     bool getWind(Vector3f &wind) const;
 
+    // set the NE wind velocity states (m/s, NED earth frame) from an external estimate and
+    // reset their covariance to the supplied variance ((m/s)^2). Used for wind dead-reckoning.
+    void setWindState(const Vector2f &wind_ne, float variance);
+
     // return earth magnetic field estimates in measurement units / 1000
     void getMagNED(Vector3f &magNED) const;
 
@@ -1144,6 +1148,7 @@ private:
     bool windStateIsObservable;     // true when wind states are observable from measurements.
     bool treatWindStatesAsTruth;    // true when wind states should be used as a truth reference
     bool windStatesAligned;         // true when wind states have been aligned
+    bool externalWindActive;        // true when the wind states have been set from an external estimate
     bool inhibitMagStates;          // true when magnetic field states are inactive
     bool lastInhibitMagStates;      // previous inhibitMagStates
     bool needMagBodyVarReset;       // we need to reset mag body variances at next CovariancePrediction

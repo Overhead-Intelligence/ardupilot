@@ -272,6 +272,7 @@ void NavEKF3_core::InitialiseVariables()
     prevInFlight = false;
     manoeuvring = false;
     inhibitWindStates = true;
+    externalWindActive = false;
     windStateIsObservable = false;
     treatWindStatesAsTruth = false;
     lastAspdEstIsValid = false;

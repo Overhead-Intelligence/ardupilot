@@ -2064,6 +2064,20 @@ void NavEKF3::writeDefaultAirSpeed(float airspeed, float uncertainty)
     }
 }
 
+// set the NE wind velocity states from an external estimate (m/s, NED earth frame) on all cores.
+// variance is the (m/s)^2 confidence applied to the wind states.
+void NavEKF3::setWindState(const Vector2f &wind_ne, float variance)
+{
+    // ignore any data if the EKF is not started
+    if (!core) {
+        return;
+    }
+
+    for (uint8_t i=0; i<num_cores; i++) {
+        core[i].setWindState(wind_ne, variance);
+    }
+}
+
 // returns true when the yaw angle has been aligned
 bool NavEKF3::yawAlignmentComplete(void) const
 {

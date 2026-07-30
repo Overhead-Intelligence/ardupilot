@@ -132,8 +132,35 @@ public:
     }
 
 #if AP_AHRS_EXTERNAL_WIND_ESTIMATE_ENABLED
-    void set_external_wind_estimate(float speed, float direction) {
+    // set an external estimate of the horizontal wind. speed is in m/s, direction is the
+    // azimuth (deg, true north) the wind is blowing *from*, speed_accuracy is the 1-sigma
+    // wind speed accuracy in m/s (<=0 or NaN selects a default confidence).
+    void set_external_wind_estimate(float speed, float direction, float speed_accuracy = 0) {
         dcm.set_external_wind_estimate(speed, direction);
+#if HAL_NAVEKF3_AVAILABLE
+        // also seed the EKF3 wind states so wind dead-reckoning uses the external estimate.
+        // NE convention matches DCM and EKF3 getWind(): the wind vector points the way the air
+        // is moving (i.e. opposite the meteorological "from" direction).
+        const Vector2f wind_ne{
+            -cosf(radians(direction)) * speed,
+            -sinf(radians(direction)) * speed
+        };
+        // convert the 1-sigma speed accuracy to a variance, defaulting to a modest 2 m/s sigma
+        const float variance = is_positive(speed_accuracy) ? sq(speed_accuracy) : sq(2.0f);
+        EKF3.setWindState(wind_ne, variance);
+#endif
+    }
+
+    // true if an external wind estimate may be applied: only when the EKF has no horizontal
+    // velocity source configured (EK3_SRCn_VELXY == 0 for the active source set), i.e. the
+    // vehicle is wind dead-reckoning. With a velocity source active the wind states are
+    // observable and an external seed would be fought by internal learning.
+    bool external_wind_estimate_allowed(void) const {
+#if HAL_NAVEKF3_AVAILABLE
+        return EKF3.getActiveVelXYSource() == AP_NavEKF_Source::SourceXY::NONE;
+#else
+        return true;
+#endif
     }
 #endif
 

@@ -5334,6 +5334,10 @@ MAV_RESULT GCS_MAVLINK::handle_command_int_external_position_estimate(const mavl
 #if AP_AHRS_EXTERNAL_WIND_ESTIMATE_ENABLED
 MAV_RESULT GCS_MAVLINK::handle_command_int_external_wind_estimate(const mavlink_command_int_t &packet)
 {
+    // wind speed (param1) and direction (param3) are required; speed accuracy (param2) is optional
+    if (isnan(packet.param1) || isnan(packet.param3)) {
+        return MAV_RESULT_DENIED;
+    }
     if (packet.param1 < 0) {
         return MAV_RESULT_DENIED;
     }
@@ -5341,7 +5345,23 @@ MAV_RESULT GCS_MAVLINK::handle_command_int_external_wind_estimate(const mavlink_
         return MAV_RESULT_DENIED;
     }
 
-    AP::ahrs().set_external_wind_estimate(packet.param1, packet.param3);
+    // only apply external wind estimates in flight. On the ground the EKF wind states are
+    // inhibited/frozen and any seed would be overwritten by the EKF's own wind init at takeoff,
+    // so reject while disarmed and let the sender retry once airborne.
+    if (!hal.util->get_soft_armed()) {
+        return MAV_RESULT_TEMPORARILY_REJECTED;
+    }
+
+    // only accept an external wind estimate when no horizontal velocity source is configured
+    // (EK3_SRCn_VELXY == 0), i.e. the EKF is wind dead-reckoning. With a velocity source active
+    // the wind states are observable and an external seed would be fought by internal learning.
+    if (!AP::ahrs().external_wind_estimate_allowed()) {
+        return MAV_RESULT_DENIED;
+    }
+
+    // param2 is the 1-sigma wind speed accuracy in m/s (NaN if unknown -> default confidence)
+    const float speed_accuracy = isnan(packet.param2) ? 0.0f : packet.param2;
+    AP::ahrs().set_external_wind_estimate(packet.param1, packet.param3, speed_accuracy);
     return MAV_RESULT_ACCEPTED;
 }
 #endif // AP_AHRS_EXTERNAL_WIND_ESTIMATE_ENABLED

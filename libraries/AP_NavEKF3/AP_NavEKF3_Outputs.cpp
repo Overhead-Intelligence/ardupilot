@@ -193,7 +193,9 @@ bool NavEKF3_core::getWind(Vector3f &wind) const
     wind.x = stateStruct.wind_vel.x;
     wind.y = stateStruct.wind_vel.y;
     wind.z = 0.0f; // currently don't estimate this
-    return !inhibitWindStates;
+    // the estimate is valid if wind is being learned internally, or if it has been
+    // supplied by an external source (e.g. wind dead-reckoning seeding)
+    return !inhibitWindStates || externalWindActive;
 }
 
 // return the NED velocity of the body frame origin in m/s
