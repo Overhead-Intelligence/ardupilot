@@ -695,6 +695,15 @@ const AP_Param::GroupInfo NavEKF3::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("DRAG_MCOEF", 5, NavEKF3, _momentumDragCoef, 0.0f),
 
+    // @Param: DRAG_TIMEOUT
+    // @DisplayName: Dead-reckoning aiding timeout
+    // @Description: When > 0, this is the single maximum time (milliseconds) the EKF will keep aiding (dead-reckoning and accepting external position estimates) with NO aiding measurement being fused, before it gives up and stops aiding. It overrides BOTH timeout paths: the attitude-aid loss in absolute mode (built-in 15000 ms) and the flow/body-odometry loss in relative mode (built-in 5000 ms). "Aiding measurement" means any of airspeed(TAS)/drag/optical-flow/body-odometry/GPS/beacon fusion - it is not specific to drag despite the name. Raise this to let a slow VTOL->forward transition dead-reckon long enough for airspeed fusion to start (which then sustains aiding), instead of dropping to a constant-position mode that cannot recover without a GPS/ExtNav/beacon source. WARNING: during this window roll/pitch drift on the IMU alone are unconstrained, so only extend it as far as your transition needs. Set to 0 to use the built-in defaults (15000 ms absolute / 5000 ms relative).
+    // @Range: 0 120000
+    // @Increment: 1000
+    // @Units: ms
+    // @User: Advanced
+    AP_GROUPINFO("DRAG_TIMEOUT", 12, NavEKF3, _drTimeout, 0),
+
     // @Param: OGNM_TEST_SF
     // @DisplayName: On ground not moving test scale factor
     // @Description: This parameter is adjust the sensitivity of the on ground not moving test which is used to assist with learning the yaw gyro bias and stopping yaw drift before flight when operating without a yaw sensor. Bigger values allow the detection of a not moving condition with noiser IMU data. Check the XKFM data logged when the vehicle is on ground not moving and adjust the value of OGNM_TEST_SF to be slightly higher than the maximum value of the XKFM.ADR, XKFM.ALR, XKFM.GDR and XKFM.GLR test levels.

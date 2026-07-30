@@ -299,10 +299,13 @@ void NavEKF3_core::setAidingMode()
             break;
         }
         case AID_RELATIVE: {
+            // Relative-aiding fusion timeout. Overridable via EK3_DRAG_TIMEOUT (ms);
+            // 0 keeps the built-in 5000 ms so this stays the single dead-reckon gate.
+            const uint32_t relTimeout_ms = (frontend->_drTimeout > 0) ? (uint32_t)frontend->_drTimeout : 5000;
             // Check if the fusion has timed out (flow measurements have been rejected for too long)
-            bool flowFusionTimeout = ((imuSampleTime_ms - prevFlowFuseTime_ms) > 5000);
+            bool flowFusionTimeout = ((imuSampleTime_ms - prevFlowFuseTime_ms) > relTimeout_ms);
             // Check if the fusion has timed out (body odometry measurements have been rejected for too long)
-            bool bodyOdmFusionTimeout = ((imuSampleTime_ms - prevBodyVelFuseTime_ms) > 5000);
+            bool bodyOdmFusionTimeout = ((imuSampleTime_ms - prevBodyVelFuseTime_ms) > relTimeout_ms);
             // Enable switch to absolute position mode if GPS or range beacon data is available
             // If GPS or range beacons data is not available and flow fusion has timed out, then fall-back to no-aiding
             if (readyToUseGPS() || readyToUseRangeBeacon() || readyToUseExtNav()) {
@@ -357,16 +360,22 @@ void NavEKF3_core::setAidingMode()
             // check if position drift has been constrained by a measurement source
             bool posAiding = posUsed || rngBcnUsed;
 
+            // Maximum time without any attitude-aiding measurement before we stop
+            // aiding. Tunable via EK3_DRAG_TIMEOUT (ms) to let a slow transition
+            // dead-reckon until airspeed fusion starts; <= 0 uses the built-in default.
+            const uint32_t attAidTimeout_ms = (frontend->_drTimeout > 0) ?
+                                              (uint32_t)frontend->_drTimeout : frontend->tiltDriftTimeMax_ms;
+
             // Check if the loss of attitude aiding has become critical
             bool attAidLossCritical = false;
             if (!attAiding) {
-            	attAidLossCritical = (imuSampleTime_ms - prevFlowFuseTime_ms > frontend->tiltDriftTimeMax_ms) &&
-                		(imuSampleTime_ms - lastTasPassTime_ms > frontend->tiltDriftTimeMax_ms) &&
+            	attAidLossCritical = (imuSampleTime_ms - prevFlowFuseTime_ms > attAidTimeout_ms) &&
+                		(imuSampleTime_ms - lastTasPassTime_ms > attAidTimeout_ms) &&
 #if EK3_FEATURE_BEACON_FUSION
-                        (imuSampleTime_ms - rngBcn.lastPassTime_ms > frontend->tiltDriftTimeMax_ms) &&
+                        (imuSampleTime_ms - rngBcn.lastPassTime_ms > attAidTimeout_ms) &&
 #endif
-                        (imuSampleTime_ms - lastGpsPosPassTime_ms > frontend->tiltDriftTimeMax_ms) &&
-                        (imuSampleTime_ms - lastVelPassTime_ms > frontend->tiltDriftTimeMax_ms);
+                        (imuSampleTime_ms - lastGpsPosPassTime_ms > attAidTimeout_ms) &&
+                        (imuSampleTime_ms - lastVelPassTime_ms > attAidTimeout_ms);
             }
 
             // Check if the loss of position accuracy has become critical

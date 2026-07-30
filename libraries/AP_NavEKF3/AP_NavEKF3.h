@@ -452,6 +452,7 @@ private:
     AP_Float _ballisticCoef_x;      // ballistic coefficient measured for flow in X body frame directions
     AP_Float _ballisticCoef_y;      // ballistic coefficient measured for flow in Y body frame directions
     AP_Float _momentumDragCoef;     // lift rotor momentum drag coefficient
+    AP_Int32 _drTimeout;            // EK3_DRAG_TIMEOUT: when >0, unified max ms without any aiding fusion before the EKF stops aiding (overrides both the 15000ms absolute and 5000ms relative built-in timeouts); 0 uses the built-in defaults
     AP_Int8 _betaMask;              // Bitmask controlling when sideslip angle fusion is used to estimate non wind states
     AP_Float _ognmTestScaleFactor;  // Scale factor applied to the thresholds used by the on ground not moving test
     AP_Float _baroGndEffectDeadZone;// Dead zone applied to positive baro height innovations when in ground effect (m)
