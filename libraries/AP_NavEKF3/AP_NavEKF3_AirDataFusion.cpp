@@ -672,7 +672,13 @@ bool NavEKF3_core::setWind(float speed, float speed_accuracy, float direction, f
     stateStruct.wind_vel.y = -speed * sinF(radians(direction));
 
     // update the vehicle velocity states to be consistent with the new wind estimate if dead reckoning
-    if ((imuSampleTime_ms - lastGpsPosPassTime_ms) > frontend->deadReckonDeclare_ms) {
+    bool deadReckoning = (imuSampleTime_ms - lastGpsPosPassTime_ms) > frontend->deadReckonDeclare_ms;
+#if EK3_FEATURE_EXTERNAL_POSITION_FUSION
+    // externally supplied position fixes also constrain the position states, so they must
+    // suppress the shift in the same way a GPS fix does
+    deadReckoning = deadReckoning && (imuSampleTime_ms - lastSetlatLngPassTime_ms) > frontend->deadReckonDeclare_ms;
+#endif // EK3_FEATURE_EXTERNAL_POSITION_FUSION
+    if (deadReckoning) {
         const Vector2F velDeltaNE = stateStruct.wind_vel - wind_vel_prev;
         stateStruct.velocity.xy() += velDeltaNE;
 
