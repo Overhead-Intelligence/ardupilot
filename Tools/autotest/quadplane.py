@@ -3952,12 +3952,12 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
         self.arm_vehicle()
         self.change_mode('QHOVER')
         self.set_rc(3, 1800)
-        self.delay_sim_time(30)
+        self.delay_sim_time(30, reason="climb in QHOVER")
         # self.send_debug_trap()
         self.change_mode('FBWA')
-        self.delay_sim_time(30)
+        self.delay_sim_time(30, reason="forward flight to establish")
         self.change_mode('LOITER')
-        self.delay_sim_time(30)
+        self.delay_sim_time(30, reason="wind estimate to be reported")
 
         self.disarm_vehicle(force=True)
 
