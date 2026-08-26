@@ -638,8 +638,7 @@ void NavEKF3_core::FuseDragForces()
 bool NavEKF3_core::setWind(float speed, float speed_accuracy, float direction, float direction_accuracy)
 {
     // reset the corresponding covariances
-    zeroRows(P,22,23);
-    zeroCols(P,22,23);
+    zeroStatesVarCov(22, 23);
 
     // set the wind state variances
     if (!isnan(speed_accuracy) && is_positive(speed_accuracy)) {
@@ -672,8 +671,8 @@ bool NavEKF3_core::setWind(float speed, float speed_accuracy, float direction, f
 
     // update the vehicle velocity states to be consistent with the new wind estimate if dead reckoning
     if ((imuSampleTime_ms - lastGpsPosPassTime_ms) > frontend->deadReckonDeclare_ms) {
-        velResetNE = stateStruct.wind_vel - wind_vel_prev;
-        stateStruct.velocity.xy() += velResetNE;
+        const Vector2F velDeltaNE = stateStruct.wind_vel - wind_vel_prev;
+        stateStruct.velocity.xy() += velDeltaNE;
 
         // update the output buffer
         for (uint8_t i=0; i<imu_buffer_length; i++) {
@@ -681,9 +680,6 @@ bool NavEKF3_core::setWind(float speed, float speed_accuracy, float direction, f
         }
         outputDataNew.velocity.xy() = stateStruct.velocity.xy();
         outputDataDelayed.velocity.xy() = stateStruct.velocity.xy();
-
-        // store the time of the reset
-        lastVelReset_ms = imuSampleTime_ms;
     }
 
     // store the time of the reset

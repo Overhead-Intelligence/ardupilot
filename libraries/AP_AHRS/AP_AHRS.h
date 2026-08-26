@@ -141,7 +141,7 @@ public:
         dcm.set_external_wind_estimate(speed, direction);
 #endif
 #if HAL_NAVEKF3_AVAILABLE
-        EKF3.setWind(speed, speed_accuracy, direction, direction_accuracy);
+        ekf3.EKF3.setWind(speed, speed_accuracy, direction, direction_accuracy);
 #endif
         // should this method return true/false based on result from current estimator?  configured estimator?
         return true;
