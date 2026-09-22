@@ -5816,7 +5816,7 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
         gpsdisabled = False
         while True:
             self.progress("set new position from SIM truth")
-            loc = self.sim_location()
+            loc = self.get_location('SIMSTATE')
             self.run_cmd_int(
                 mavutil.mavlink.MAV_CMD_EXTERNAL_POSITION_ESTIMATE,
                 p1=self.get_sim_time()-1.0, # transmit time
