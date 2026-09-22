@@ -8231,7 +8231,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             p3=90,            # direction
             p4=float("NaN"),  # direction accuracy
         )
-        self.delay_sim_time(10)
+        self.delay_sim_time(10, reason="NaN accuracies to be handled")
 
     def _MAV_CMD_EXTERNAL_WIND_ESTIMATE(self, command):
         self.set_parameters({
