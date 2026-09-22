@@ -248,7 +248,7 @@ bool NavEKF3_core::setLatLng(const Location &loc, float posAccuracy, uint32_t ti
                 // reset the corresponding covariances
                 zeroStatesVarCov(7,8);
 
-                P[7][7] = P[8][8] = sq(setLatLngPosAcc);
+                Pmut[7][7] = Pmut[8][8] = sq(setLatLngPosAcc);
 
                 ResetPositionNE(velPosObs[3], velPosObs[4]);
 
@@ -268,7 +268,7 @@ bool NavEKF3_core::setLatLng(const Location &loc, float posAccuracy, uint32_t ti
         // reset the corresponding covariances
         zeroStatesVarCov(7,8);
 
-        P[7][7] = P[8][8] = sq(setLatLngPosAcc);
+        Pmut[7][7] = Pmut[8][8] = sq(setLatLngPosAcc);
 
         ResetPositionNE(newPosNE.x,newPosNE.y);
 #if EK3_FEATURE_EXTERNAL_POSITION_FUSION
