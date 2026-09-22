@@ -653,15 +653,17 @@ bool NavEKF3_core::setWind(float speed, float speed_accuracy, float direction, f
             const ftype PS4 = dirnVar*sq(speed);
             const ftype PS5 = PS0*PS2*(-PS4 + spdVar);
 
-            P[22][22] = PS1*spdVar + PS3*PS4;
-            P[23][22] = PS5;
-            P[22][23] = PS5;
-            P[23][23] = PS1*PS4 + PS3*spdVar;
+            // the off-diagonal pair is written symmetrically, preserving the
+            // symmetry and positive semi-definiteness required of the covariance
+            Pmut[22][22] = PS1*spdVar + PS3*PS4;
+            Pmut[23][22] = PS5;
+            Pmut[22][23] = PS5;
+            Pmut[23][23] = PS1*PS4 + PS3*spdVar;
         } else {
-            P[22][22] = P[23][23] = sq(speed_accuracy);
+            Pmut[22][22] = Pmut[23][23] = sq(speed_accuracy);
         }
     } else {
-        P[22][22] = P[23][23] = sq(WIND_SPD_UNCERTAINTY);
+        Pmut[22][22] = Pmut[23][23] = sq(WIND_SPD_UNCERTAINTY);
     }
 
     // reset the NE wind velocity states to the measurement
