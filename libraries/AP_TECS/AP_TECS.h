@@ -216,7 +216,10 @@ private:
 
     enum class Option {
         GLIDER_ONLY     = (1<<0),
-        DESCENT_SPEEDUP = (1<<1)
+        DESCENT_SPEEDUP = (1<<1),
+        // (1<<2) reserved: HGT_ACCLN_CTRL in upstream PR #31698
+        HDEM_NO_RETRACT = (1<<3),
+        HDEM_LAG_FF     = (1<<4)
     };
 
     bool option_is_set(const Option option) const {
