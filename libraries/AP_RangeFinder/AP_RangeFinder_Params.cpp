@@ -64,6 +64,8 @@ const AP_Param::GroupInfo AP_RangeFinder_Params::var_info[] = {
     // @Values: 46:BenewakeTFS20L-I2C
     // @Values: 47:DTS6012M-Serial
     // @Values: 48:LightWare-GRF-I2C
+    // @Values: 94:LightWareI2CFirstRtn
+    // @Values: 95:LightWareI2CLastRtn
     // @Values: 100:SITL
     // @User: Standard
     AP_GROUPINFO_FLAGS("TYPE", 1, AP_RangeFinder_Params, type, 0, AP_PARAM_FLAG_ENABLE),
