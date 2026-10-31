@@ -1105,6 +1105,177 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
         if position_drift > 5.0 :
             raise NotAchievedException("position drift high, want < 5.0 m got %f m" % (position_drift))
 
+    def RangefinderLowOnGround(self):
+        '''VTOL ground logic must take a rangefinder below its minimum range as zero height'''
+        # The rangefinder's 5m minimum range keeps it out of range low
+        # on the ground, as on many lidar installations.  The GPS reads
+        # 10m high, so a terrain height taken on the ground puts the
+        # vehicle 10m up: enough to release the VTOL motors from
+        # throttle suppression and to open the Q_FWD_THR_USE forward
+        # throttle, which spins the forward motor on the ground.
+        self.context_push()
+        self.install_terrain_handlers_context()
+        self.set_parameters({
+            "TERRAIN_ENABLE": 1,
+            "TERRAIN_FOLLOW": 1,
+            "TERRAIN_OFS_MAX": 0,
+            "EK3_SRC1_POSZ": 3,  # GPS height
+            "RNGFND1_TYPE": 100,
+            "RNGFND_LANDING": 1,
+            "Q_GUIDED_MODE": 1,
+            "Q_FWD_THR_USE": 1,
+            "Q_VFWD_ALT": 5,
+            "SIM_GPS1_ALT_OFS": 10,
+        })
+        self.reboot_sitl()
+        self.set_parameters({
+            "RNGFND1_MIN": 5,
+            "RNGFND1_MAX": 95,
+        })
+
+        # ground idle runs the VTOL motors at Q_M_SPIN_ARM; released at
+        # zero throttle they run at Q_M_SPIN_MIN
+        pwm_min = self.get_parameter("Q_M_PWM_MIN")
+        pwm_max = self.get_parameter("Q_M_PWM_MAX")
+        spin = 0.5 * (self.get_parameter("Q_M_SPIN_ARM") + self.get_parameter("Q_M_SPIN_MIN"))
+        idle_pwm_max = pwm_min + spin * (pwm_max - pwm_min)
+        fwd_pwm_max = self.get_parameter("SERVO3_MIN") + 10
+
+        ground_alt = self.get_altitude(altitude_source="SIM_STATE.alt")
+
+        def fly_terrain_leg():
+            '''take off and hold a terrain-relative target, as a terrain-following mission would'''
+            self.takeoff(20, mode='GUIDED')
+            self.send_do_reposition(Location(SITL_START_LOCATION.lat,
+                                             SITL_START_LOCATION.lng,
+                                             30,
+                                             AltFrame.ABOVE_TERRAIN))
+            self.wait_altitude(25, 35,
+                               altitude_source="TERRAIN_REPORT.current_height",
+                               minimum_duration=5,
+                               timeout=60)
+
+        def land_and_check_on_ground(name):
+            '''land in QLOITER with zero throttle and check the ground logic while still armed'''
+            self.set_rc(3, 1500)
+            self.change_mode('QLOITER')
+            self.set_rc(3, 1000)
+            self.wait_altitude(ground_alt - 2, ground_alt + 0.5,
+                               altitude_source="SIM_STATE.alt",
+                               timeout=90)
+            self.delay_sim_time(10, reason="vehicle settling on the ground")
+            t_start = self.get_sim_time()
+            failures = []
+            m = self.assert_receive_message('TERRAIN_REPORT')
+            self.progress("%s: terrain height above ground on the ground %.1fm" % (name, m.current_height))
+            for chan in range(5, 9):
+                pwm = self.get_servo_channel_value(chan)
+                if pwm > idle_pwm_max:
+                    failures.append("motor on SERVO%u at %u, above ground idle (%u)" % (chan, pwm, idle_pwm_max))
+
+            # full forward pitch stick; the loiter controller asks for
+            # forward tilt, which Q_FWD_THR_USE turns into forward throttle
+            self.set_rc(2, 1000)
+            fwd_pwm = 0
+            tstart = self.get_sim_time()
+            while self.get_sim_time_cached() - tstart < 5:
+                fwd_pwm = max(fwd_pwm, self.assert_receive_message('SERVO_OUTPUT_RAW').servo3_raw)
+            self.set_rc(2, 1500)
+            if fwd_pwm > fwd_pwm_max:
+                failures.append("forward motor ran on the ground: SERVO3 up to %u" % fwd_pwm)
+            t_end = self.get_sim_time()
+            self.disarm_vehicle(force=True)
+
+            # the forward throttle scaler should read the ground as 0m
+            fts = []
+            dfreader = self.dfreader_for_current_onboard_log()
+            while True:
+                m = dfreader.recv_match(type='FWDT')
+                if m is None:
+                    break
+                if t_start <= m.TimeUS * 1.0e-6 <= t_end:
+                    fts.append(m.fts)
+            if len(fts) == 0:
+                failures.append("no FWDT messages on the ground")
+            elif max(fts) > 0:
+                failures.append("forward throttle scaler up to %.2f on the ground" % max(fts))
+
+            for f in failures:
+                self.progress("%s: %s" % (name, f))
+            if len(failures):
+                raise NotAchievedException("%s: %s" % (name, failures[0]))
+
+        self.start_subtest("No terrain offset, GPS 10m high from boot")
+        fly_terrain_leg()
+        land_and_check_on_ground("TERRAIN_OFS_MAX=0")
+
+        self.start_subtest("Terrain offset taken at arming, GPS drifts 10m high in flight")
+        self.set_parameters({
+            "TERRAIN_OFS_MAX": 15,
+            "SIM_GPS1_ALT_OFS": 0,
+        })
+        self.delay_sim_time(10, reason="home altitude follows the GPS")
+        fly_terrain_leg()
+        self.set_parameter("SIM_GPS1_ALT_OFS", 10)
+        self.delay_sim_time(20, reason="EKF height follows the GPS")
+        land_and_check_on_ground("TERRAIN_OFS_MAX=15")
+
+        self.start_subtest("AUTO VTOL takeoff and landing with home 10m below the launch point")
+        self.set_parameter("TERRAIN_OFS_MAX", 0)
+        self.upload_simple_relhome_mission([
+            (mavutil.mavlink.MAV_CMD_NAV_VTOL_TAKEOFF, 0, 0, 15),
+            (mavutil.mavlink.MAV_CMD_NAV_VTOL_LAND, 0, 0, 0),
+        ])
+        self.change_mode('AUTO')
+        self.wait_ready_to_arm()
+        # a takeoff target is not terrain-relative, so the takeoff falls
+        # back to the height above home
+        here = self.get_location()
+        self.run_cmd_int(
+            mavutil.mavlink.MAV_CMD_DO_SET_HOME,
+            0,
+            0,
+            0,
+            0,
+            int(here.lat * 1e7),
+            int(here.lng * 1e7),
+            here.get_alt_m(AltFrame.ABSOLUTE) - 10,
+            frame=mavutil.mavlink.MAV_FRAME_GLOBAL,
+        )
+        self.context_collect('STATUSTEXT')
+        self.arm_vehicle()
+        t_start = self.get_sim_time()
+        self.wait_altitude(ground_alt + 14, ground_alt + 20,
+                           altitude_source="SIM_STATE.alt",
+                           timeout=60)
+        t_end = self.get_sim_time()
+        self.wait_statustext('Land final started', check_context=True, timeout=120)
+        self.wait_disarmed(timeout=60)
+
+        # the forward throttle scaler should read 0m while the
+        # rangefinder is below its minimum range in the takeoff.  RFND
+        # and FWDT are both logged at 10Hz, so stay 1m below the minimum
+        # to keep clear of the moment the rangefinder starts reading
+        fts = []
+        rfnd_dist = None
+        dfreader = self.dfreader_for_current_onboard_log()
+        while True:
+            m = dfreader.recv_match(type=['RFND', 'FWDT'])
+            if m is None:
+                break
+            if m.get_type() == 'RFND':
+                rfnd_dist = m.Dist
+            elif t_start <= m.TimeUS * 1.0e-6 <= t_end and rfnd_dist is not None and rfnd_dist < 4:
+                fts.append(m.fts)
+        if len(fts) == 0:
+            raise NotAchievedException("no FWDT messages below the rangefinder minimum in the takeoff")
+        if max(fts) > 0:
+            raise NotAchievedException("forward throttle scaler up to %.2f below the rangefinder minimum in the takeoff" %
+                                       max(fts))
+
+        self.context_pop()
+        self.reboot_sitl()
+
     def Weathervane(self):
         '''test nose-into-wind functionality'''
         # We test nose into wind code paths and yaw direction in copter autotest,
@@ -4161,5 +4332,6 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
             self.TECSThrSpikeOnModeChange,
             self.CircuitStatusScript,
             self.CompassLearnCopyFromEKFAffinity,
+            self.RangefinderLowOnGround,
         ])
         return ret
