@@ -1131,6 +1131,95 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
         '''In lockup Plane should copy RC inputs to RC outputs'''
         self.plane_CPUFailsafe()
 
+    def QAssistSpeedDelay(self, thr_min_pwm):
+        '''check Q_ASSIST_OPTIONS bit 2 applies Q_ASSIST_DELAY to the airspeed assist'''
+        assist_speed = self.get_parameter("Q_ASSIST_SPEED")
+        dip_airspeed = assist_speed - 8
+        # the parameter round trips stretch a dip by up to 0.6s, so
+        # leave a wide margin between the short dip and the delay
+        assist_delay = 2.0
+        short_dip = 0.6
+
+        def wait_for_cruise():
+            self.set_rc(3, 1800)
+            self.wait_servo_channel_value(5, thr_min_pwm, timeout=60, comparator=operator.eq)
+            self.wait_airspeed(assist_speed+3, 100, minimum_duration=5, timeout=60)
+
+        def airspeed_dip(seconds):
+            '''make the airspeed sensor read dip_airspeed for a short time'''
+            self.context_collect('VFR_HUD')
+            self.context_clear_collection('VFR_HUD')
+            tstart = self.get_sim_time()
+            self.set_parameter("SIM_ARSPD_FAIL", dip_airspeed)
+            self.delay_sim_time(seconds, reason="airspeed dip")
+            self.set_parameter("SIM_ARSPD_FAIL", 0)
+            dip = self.get_sim_time() - tstart
+            self.delay_sim_time(0.5, reason="airspeed recovery")
+            lowest = min(m.airspeed for m in self.context_collection('VFR_HUD'))
+            self.progress("Airspeed dip of %.2fs, lowest airspeed %.1f" % (dip, lowest))
+            if dip >= assist_delay:
+                raise NotAchievedException("Airspeed dip lasted %.2fs, not shorter than Q_ASSIST_DELAY" % dip)
+            if lowest >= assist_speed:
+                raise NotAchievedException("Airspeed dip only reached %.1f, not below Q_ASSIST_SPEED" % lowest)
+            return dip
+
+        self.context_push()
+        self.context_collect('STATUSTEXT')
+        self.set_parameters({
+            "SIM_ARSPD_RND": 0,
+            # keep the airspeed sensor in use through the dips
+            "ARSPD_OPTIONS": 0,
+            "Q_ASSIST_DELAY": assist_delay,
+            "Q_ASSIST_OPTIONS": 4,
+        })
+
+        self.start_subtest("Speed assist delay: a short airspeed dip does not start assist")
+        wait_for_cruise()
+        self.context_push()
+        self.context_set_speedup(1)
+        dip = airspeed_dip(short_dip)
+        tstart = self.get_sim_time()
+        while self.get_sim_time_cached() - tstart < 3:
+            pwm = self.get_servo_channel_value(5)
+            if pwm != thr_min_pwm:
+                raise NotAchievedException("Assist started after a %.2fs airspeed dip (servo5=%u)" % (dip, pwm))
+        self.context_pop()
+        for m in self.context_collection('STATUSTEXT'):
+            if "Speed assist" in m.text:
+                raise NotAchievedException("Unexpected statustext (%s)" % m.text)
+
+        self.start_subtest("Speed assist delay: a long airspeed dip starts assist after Q_ASSIST_DELAY")
+        wait_for_cruise()
+        self.context_push()
+        self.context_set_speedup(1)
+        self.context_collect('STATUSTEXT')
+        tstart = self.get_sim_time()
+        self.set_parameter("SIM_ARSPD_FAIL", dip_airspeed)
+        self.wait_statustext("Speed assist", check_context=True, timeout=10)
+        delay_seen = self.get_sim_time() - tstart
+        self.wait_servo_channel_value(5, thr_min_pwm, timeout=5, comparator=operator.gt)
+        self.set_parameter("SIM_ARSPD_FAIL", 0)
+        self.context_pop()
+        if delay_seen < assist_delay or delay_seen > assist_delay + 1.5:
+            raise NotAchievedException("Speed assist started %.2fs after the airspeed dip" % delay_seen)
+        self.progress("Speed assist started %.2fs after the airspeed dip" % delay_seen)
+        self.progress("Checking qassist stops")
+        self.wait_servo_channel_value(5, thr_min_pwm, timeout=60, comparator=operator.eq)
+
+        self.start_subtest("Speed assist delay: with the option clear a short dip starts assist")
+        self.set_parameter("Q_ASSIST_OPTIONS", 0)
+        wait_for_cruise()
+        self.context_push()
+        self.context_set_speedup(1)
+        airspeed_dip(short_dip)
+        self.wait_servo_channel_value(5, thr_min_pwm, timeout=5, comparator=operator.gt)
+        self.context_pop()
+        self.progress("Checking qassist stops")
+        self.wait_servo_channel_value(5, thr_min_pwm, timeout=60, comparator=operator.eq)
+
+        self.context_pop()
+        self.set_rc(3, 1300)
+
     def QAssist(self):
         '''QuadPlane Assist tests'''
         self.takeoff(50, mode="QHOVER", timeout=120)
@@ -1166,6 +1255,12 @@ class AutoTestQuadPlane(vehicle_test_suite.TestSuite):
                                       timeout=30,
                                       comparator=operator.eq)
         self.set_rc(3, 1300)
+
+        self.QAssistSpeedDelay(thr_min_pwm)
+
+        # the speed assist delay option must not change the angle and
+        # altitude assist, so run their subtests with it set
+        self.set_parameter("Q_ASSIST_OPTIONS", 4)
 
         # Disable speed assist and alt assist during angle assist tests
         self.set_parameters({
