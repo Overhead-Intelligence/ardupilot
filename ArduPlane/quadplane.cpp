@@ -236,6 +236,7 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
     // @Description: Options for special QAssist features
     // @Bitmask: 0: Disable force fixed wing controller recovery
     // @Bitmask: 1: Disable quadplane spin recovery
+    // @Bitmask: 2: Apply Q_ASSIST_DELAY to the airspeed assist
     // @User: Standard
     AP_GROUPINFO("ASSIST_OPTIONS", 47, QuadPlane, assist.options, 0),
     
@@ -413,7 +414,7 @@ const AP_Param::GroupInfo QuadPlane::var_info2[] = {
 
     // @Param: ASSIST_DELAY
     // @DisplayName: Quadplane assistance delay
-    // @Description: This is delay between the assistance thresholds being met and the assistance starting.
+    // @Description: This is delay between the angle or altitude assistance thresholds being met and the assistance starting. The assistance clears once its threshold has not been met for twice this delay. With Q_ASSIST_OPTIONS bit 2 set the delay also applies to the airspeed threshold, otherwise airspeed assistance starts and stops as soon as the airspeed crosses Q_ASSIST_SPEED.
     // @Units: s
     // @Range: 0 2
     // @Increment: 0.1

@@ -51,6 +51,7 @@ void VTOL_Assist::reset()
     speed_assist = false;
     angle_error.reset();
     alt_error.reset();
+    speed_error.reset();
 }
 
 /*
@@ -84,19 +85,32 @@ bool VTOL_Assist::should_assist(float aspeed, bool have_airspeed)
     if (speed <= 0) {
         // all checks disabled via speed threshold, still allow force enabled
         speed_assist = false;
+        speed_error.reset();
         alt_error.reset();
         angle_error.reset();
         return force_assist;
     }
 
-    // assistance due to Q_ASSIST_SPEED
-    // if option bit is enabled only allow assist with real airspeed sensor
-    speed_assist = (have_airspeed && aspeed < speed) && 
-       (!quadplane.option_is_set(QuadPlane::Option::DISABLE_SYNTHETIC_AIRSPEED_ASSIST) || plane.ahrs.using_airspeed_sensor());
-
     const uint32_t now_ms = AP_HAL::millis();
     const uint32_t tigger_delay_ms = delay * 1000;
     const uint32_t clear_delay_ms = tigger_delay_ms * 2;
+
+    // assistance due to Q_ASSIST_SPEED
+    // if option bit is enabled only allow assist with real airspeed sensor
+    const bool speed_trigger = (have_airspeed && aspeed < speed) &&
+       (!quadplane.option_is_set(QuadPlane::Option::DISABLE_SYNTHETIC_AIRSPEED_ASSIST) || plane.ahrs.using_airspeed_sensor());
+
+    if (option_is_set(OPTION::SPEED_DELAY)) {
+        // same trigger and clear delays as the altitude and angle checks
+        if (speed_error.update(speed_trigger, now_ms, tigger_delay_ms, clear_delay_ms)) {
+            gcs().send_text(MAV_SEVERITY_WARNING, "Speed assist %.1fm/s", aspeed);
+        }
+        speed_assist = speed_error.is_active();
+    } else {
+        // no hysteresis
+        speed_error.reset();
+        speed_assist = speed_trigger;
+    }
 
     /*
       optional assistance when altitude is too close to the ground
