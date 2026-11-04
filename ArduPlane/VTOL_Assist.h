@@ -32,6 +32,7 @@ public:
     enum class OPTION {
         FW_FORCE_DISABLED=(1U<<0),
         SPIN_DISABLED=(1U<<1),
+        SPEED_DELAY=(1U<<2),
     };
     
     bool option_is_set(OPTION option) const {
@@ -81,8 +82,9 @@ private:
     };
     Assist_Hysteresis angle_error;
     Assist_Hysteresis alt_error;
+    Assist_Hysteresis speed_error;
 
-    // Force and speed assist have no hysteresis
+    // Force assist has no hysteresis, speed assist only has it with the SPEED_DELAY option
     bool force_assist;
     bool speed_assist;
 
