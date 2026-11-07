@@ -246,7 +246,7 @@ const AP_Param::GroupInfo AP_TECS::var_info[] = {
     // @Param: OPTIONS
     // @DisplayName: Extra TECS options
     // @Description: This allows the enabling of special features in the speed/height controller.
-    // @Bitmask: 0:GliderOnly,1:AllowDescentSpeedup
+    // @Bitmask: 0:GliderOnly,1:AllowDescentSpeedup,3:NoHeightDemandRetract,4:HeightDemandLagFF
     // @User: Advanced
     AP_GROUPINFO("OPTIONS", 28, AP_TECS, _options, 0),
 
@@ -579,10 +579,16 @@ void AP_TECS::_update_height_demand(void)
         _post_TO_hgt_offset *= (1.0f - coef);
         _hgt_dem = _hgt_dem_lpf + _post_TO_hgt_offset;
 
-        // during approach compensate for height filter lag
-        if (_flags.is_doing_auto_land) {
+        // compensate for height filter lag. Stock behaviour applies this only on the
+        // autoland approach; Option::HDEM_LAG_FF extends it to all height control.
+        // Without it the demand settles HDEM_TCONST * climb_rate below the input on
+        // sustained climbs (and the mirror image high on descents) - an offset no
+        // downstream loop can remove, because every integrator acts on the lagged
+        // demand. [oi-tecs-demand-fix]
+        if (_flags.is_doing_auto_land || option_is_set(Option::HDEM_LAG_FF)) {
             _hgt_dem += _hgt_dem_tconst * _hgt_rate_dem;
-        } else {
+        }
+        if (!_flags.is_doing_auto_land) {
             // Don't allow height demand to get too far ahead of the vehicles current height
                 // if vehicle is unable to follow the demanded climb or descent
             bool max_climb_condition   = (_pitch_dem_unc > _PITCHmaxf) ||
@@ -597,9 +603,13 @@ void AP_TECS::_update_height_demand(void)
             }
             const float hgt_dem_alpha = _DT / MAX(_DT + _hgt_dem_tconst, _DT);
             if (max_climb_condition && _hgt_dem > _hgt_dem_prev) {
+                if (!option_is_set(Option::HDEM_NO_RETRACT)) {
                     _max_climb_scaler *= (1.0f - hgt_dem_alpha);
+                }
             } else if (max_descent_condition && _hgt_dem < _hgt_dem_prev) {
-                _max_sink_scaler *= (1.0f - hgt_dem_alpha);
+                if (!option_is_set(Option::HDEM_NO_RETRACT)) {
+                    _max_sink_scaler *= (1.0f - hgt_dem_alpha);
+                }
             } else {
                 _max_climb_scaler = _max_climb_scaler * (1.0f - hgt_dem_alpha) + hgt_dem_alpha;
                 _max_sink_scaler  =  _max_sink_scaler * (1.0f - hgt_dem_alpha) + hgt_dem_alpha;
@@ -1295,7 +1305,12 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
     const bool max_climb_condition = (_pitch_dem_unc > _PITCHmaxf || _thr_clip_status == clipStatus::MAX) &&
                                     !(_flight_stage == AP_FixedWing::FlightStage::TAKEOFF || _flight_stage == AP_FixedWing::FlightStage::ABORT_LANDING);
     const bool max_descent_condition = _pitch_dem_unc < _PITCHminf || _thr_clip_status == clipStatus::MIN;
-    if (max_climb_condition && _hgt_dem_in_raw > _hgt_dem_in_prev) {
+    if (option_is_set(Option::HDEM_NO_RETRACT)) {
+        // [oi-tecs-demand-fix] never freeze the raw height demand while clipped:
+        // freezing abandons the target and the deficit accumulates unboundedly; the
+        // pitch and throttle limiters still bound what is actually flown.
+        _hgt_dem_in = _hgt_dem_in_raw;
+    } else if (max_climb_condition && _hgt_dem_in_raw > _hgt_dem_in_prev) {
         _hgt_dem_in = _hgt_dem_in_prev;
     } else if (max_descent_condition && _hgt_dem_in_raw < _hgt_dem_in_prev) {
         _hgt_dem_in = _hgt_dem_in_prev;
