@@ -124,12 +124,22 @@ float Plane::relative_ground_altitude(enum RangeFinderUse use_rangefinder, bool 
    }
 #endif
 
-#if HAL_QUADPLANE_ENABLED && AP_RANGEFINDER_ENABLED
-   if (rangefinder_use(use_rangefinder) && quadplane.in_vtol_land_final() &&
+#if AP_RANGEFINDER_ENABLED
+   if (rangefinder_use(use_rangefinder) &&
        rangefinder.status_orient(rangefinder_orientation()) == RangeFinder::Status::OutOfRangeLow) {
-       // a special case for quadplane landing when rangefinder goes
-       // below minimum. Consider our height above ground to be zero
-       return 0;
+       // the rangefinder is below its minimum range. On the ground, in
+       // a VTOL takeoff and in the final stage of a VTOL landing
+       // consider our height above ground to be zero. Terrain data or
+       // home altitude can be several metres off here, for example
+       // from a GPS height error, which would make the vehicle appear
+       // to be flying
+       bool near_ground = !is_flying();
+#if HAL_QUADPLANE_ENABLED
+       near_ground = near_ground || quadplane.in_vtol_takeoff() || quadplane.in_vtol_land_final();
+#endif
+       if (near_ground) {
+           return 0;
+       }
    }
 #endif
 
